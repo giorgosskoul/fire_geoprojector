@@ -1,23 +1,31 @@
-from utils.helper import simulate_fire_detections
-import json
+from utils.helper import (
+    load_points_from_json,
+    simulate_fire_detections,
+    visualize_fire_grid,
+)
+import argparse
 
-def main():
+
+def main(data_path: str, gif_path: str):
+    """
+    Main function to simulate fire detections, and visualize the results.
+
+    :param data_path: Path to the ignition points JSON file.
+    :param gif_path: Path to save the output GIF. If None, the grid will be printed to the console.
+    """
     # Load the test ignition points from JSON file
-    with open('data/test.json', 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    ignition_points = data.get('fire_coords', [])
-    if not ignition_points:
-        print("No ignition points found in the JSON file.")
-        return
-    else:
-        print(f"Loaded {len(ignition_points)} ignition points from the JSON file.")
+    ignition_points = load_points_from_json(data_path)
+    print(f"Ignition Points: {ignition_points}")
 
     # Simulate fire detections with default parameters
-    time_grid = simulate_fire_detections()
-    
-    # Print the simulated fire detections
-    for lat, lon, timestamp in time_grid:
-        print(f"Latitude: {lat}, Longitude: {lon}, Timestamp: {timestamp}")
+    detections = simulate_fire_detections()
+
+    visualize_fire_grid(detections, gif_path=gif_path)
+
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Fire Geoprojector Script")
+    parser.add_argument("--data_path", type=str, default="data/test.json", help="Path to the ignition points JSON file")
+    parser.add_argument("--gif_path", type=str, default=None, help="Path to save the output GIF")
+    args = parser.parse_args()
+    main(args.data_path, args.gif_path)
