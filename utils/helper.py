@@ -12,6 +12,9 @@ def load_points_from_json(file_path: str):
     Load ignition points from a json file.
     Points must be written as a list of lists of two floats;
     latitude and longitude.
+
+    :param file_path: Path to the JSON file containing ignition points.
+    :return: List of ignition points, each represented as a tuple (lat, lon).
     """
     with open(file_path, "r", encoding="utf-8") as f:
         ignition_points = json.load(f)
@@ -26,7 +29,7 @@ def load_points_from_json(file_path: str):
 def simulate_fire_detections(
     num_frames: int = 6,
     step_minutes: float = 10.0,
-    grid_size: int = 10,
+    row_size: int = 10,
 ):
     """
     Simulate dummy fire detections on a 10x10 grid.
@@ -34,13 +37,13 @@ def simulate_fire_detections(
 
     :parm num_frames: Number of frames to simulate.
     :parm step_minutes: Time step in minutes between frames.
-    :parm grid_size: Size of the grid (default 10 for 10x10).
+    :parm row_size: Size of rows (also for columns). The total grid size will be row_size x row_size.
     :return: List of tuples containing (row, col, timestamp) for each frame.
     """
     start_time = datetime.now()
     detections = []
 
-    center = grid_size // 2
+    center = row_size // 2
     row = center
     col = center
 
@@ -65,57 +68,71 @@ def simulate_fire_detections(
             col = col + 1
 
         # Add detection only if within grid bounds
-        if 0 <= row < grid_size and 0 <= col < grid_size:
+        if 0 <= row < row_size and 0 <= col < row_size:
             detections.append((row, col, timestamp))
 
     return detections
 
 
+def visualize_fire_grid(
+    detections: list[tuple[int, int, datetime]],
+    row_size: int = 10,
+    gif_path: str = None,
+):
+    """
+    Visualize the fire detections on a grid for each timestamp.
+    If gif_path is not specified, prints the grid to the console.
+    Otherwise, stores the visualization as a GIF.
 
-def visualize_fire_grid(detections, grid_size: int = 10, gif_path: str = None):
-        """
-        Visualize the fire detections on a grid for each timestamp.
-        If gif_path is not specified, prints the grid to the console.
-        Otherwise, stores the visualization as a GIF.
-        """
-        # Try using emojis if supported
-        try:
-            tree = "🌲"
-            fire = "🔥"
-            print(tree, fire, end="\r")
-        except Exception:
-            tree = "."
-            fire = "F"
+    :param detections: List of tuples containing (row, col, timestamp) for each detection.
+    :param row_size: Size of rows (also for columns). The total grid size will be row_size x row_size.
+    :param gif_path: Path to save the output GIF. If None, prints the grid to the console.
+    """
+    # Try using emojis if supported
+    try:
+        tree = "🌲"
+        fire = "🔥"
+        print(tree, fire, end="\r")
+    except Exception:
+        tree = "."
+        fire = "F"
 
-        # Prepare frames for each timestamp
-        frames = []
-        for i in range(len(detections)):
-            grid = [[tree for _ in range(grid_size)] for _ in range(grid_size)]
-            for row, col, _ in detections[:i+1]:
-                if 0 <= row < grid_size and 0 <= col < grid_size:
-                    grid[row][col] = fire
-            frames.append(grid)
+    # Prepare frames for each timestamp
+    frames = []
+    for i in range(len(detections)):
+        grid = [[tree for _ in range(row_size)] for _ in range(row_size)]
+        for row, col, _ in detections[: i + 1]:
+            if 0 <= row < row_size and 0 <= col < row_size:
+                grid[row][col] = fire
+        frames.append(grid)
 
-        if gif_path:
-            # Ensure gif_path exists
-            gif_dir = os.path.dirname(gif_path)
-            if gif_dir and not os.path.exists(gif_dir):
-                os.makedirs(gif_dir, exist_ok=True)
+    if gif_path:
+        # Ensure gif_path exists
+        gif_dir = os.path.dirname(gif_path)
+        if gif_dir and not os.path.exists(gif_dir):
+            os.makedirs(gif_dir, exist_ok=True)
 
-            # Create the GIF
-            fig, ax = plt.subplots()
-            def update(frame):
-                ax.clear()
-                ax.set_xticks([])
-                ax.set_yticks([])
-                ax.imshow(np.array([[1 if cell == fire else 0 for cell in row] for row in frame]), cmap="hot", vmin=0, vmax=1)
-            ani = animation.FuncAnimation(fig, update, frames=frames, repeat=False)
-            ani.save(gif_path, writer='pillow')
-            plt.close(fig)
-        else:
-            # Print each frame to the console
-            for idx, grid in enumerate(frames):
-                print(f"Frame {idx+1}:")
-                for r in grid:
-                    print(" ".join(r))
-                print()
+        # Create the GIF
+        fig, ax = plt.subplots()
+
+        def update(frame):
+            ax.clear()
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.imshow(
+                np.array([[1 if cell == fire else 0 for cell in row] for row in frame]),
+                cmap="hot",
+                vmin=0,
+                vmax=1,
+            )
+
+        ani = animation.FuncAnimation(fig, update, frames=frames, repeat=False)
+        ani.save(gif_path, writer="pillow")
+        plt.close(fig)
+    else:
+        # Print each frame to the console
+        for idx, grid in enumerate(frames):
+            print(f"Frame {idx + 1}:")
+            for r in grid:
+                print(" ".join(r))
+            print()

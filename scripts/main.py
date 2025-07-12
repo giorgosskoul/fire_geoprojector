@@ -25,7 +25,14 @@ def main(data_path: str, gif_path: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fire Geoprojector Script")
-    parser.add_argument("--data_path", type=str, default="data/test.json", help="Path to the ignition points JSON file")
-    parser.add_argument("--gif_path", type=str, default=None, help="Path to save the output GIF")
+    parser.add_argument(
+        "--data_path",
+        type=str,
+        default="data/test.json",
+        help="Path to the ignition points JSON file",
+    )
+    parser.add_argument(
+        "--gif_path", type=str, default=None, help="Path to save the output GIF"
+    )
     args = parser.parse_args()
     main(args.data_path, args.gif_path)
