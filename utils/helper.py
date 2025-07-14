@@ -1,10 +1,13 @@
+import json
+import os
 import random
 from datetime import datetime, timedelta
-import json
-import numpy as np
-import os
-import matplotlib.pyplot as plt
+
 import matplotlib.animation as animation
+import matplotlib.pyplot as plt
+import numpy as np
+
+from utils.buffer import EventBuffer
 
 
 def load_points_from_json(file_path: str):
@@ -26,113 +29,59 @@ def load_points_from_json(file_path: str):
         return ignition_points
 
 
-def simulate_fire_detections(
-    num_frames: int = 6,
-    step_minutes: float = 10.0,
-    row_size: int = 10,
-):
+def assign_timestamps_to_points(
+    points: list[list[float]],
+    start_time: datetime,
+    step_minutes: int = 1,
+) -> list[tuple[float, float, datetime]]:
     """
-    Simulate dummy fire detections on a 10x10 grid.
-    The fire starts at the center of the grid and spreads randomly.
+    Assign timestamps to a list of (lat, lon) points in sequential order.
 
-    :parm num_frames: Number of frames to simulate.
-    :parm step_minutes: Time step in minutes between frames.
-    :parm row_size: Size of rows (also for columns). The total grid size will be row_size x row_size.
-    :return: List of tuples containing (row, col, timestamp) for each frame.
+    :param points: List of [lat, lon] points.
+    :param start_time: Datetime to begin the timeline.
+    :param step_minutes: Minutes between each point.
+    :return: List of (lat, lon, timestamp) tuples.
     """
-    start_time = datetime.now()
-    detections = []
-
-    center = row_size // 2
-    row = center
-    col = center
-
-    # Initial detection at the center
-    detections.append((row, col, start_time))
-    ## !: For an even grid size (inc. 10), the center cannot be a tuple of integers.
-    ## # Therefore, we do not use the real center, but a neighboring cell.
-    ## # eg. (5,5) should not be the real center, but (4.5, 4.5)
-
-    for i in range(num_frames):
-        timestamp = start_time + timedelta(minutes=i * step_minutes)
-
-        # Fire spread -> Only follows a random direction
-        chance = random.random()
-        if random.random() < 0.25:
-            row = row - 1
-        elif chance < 0.5:
-            row = row + 1
-        elif chance < 0.75:
-            col = col - 1
-        else:
-            col = col + 1
-
-        # Add detection only if within grid bounds
-        if 0 <= row < row_size and 0 <= col < row_size:
-            detections.append((row, col, timestamp))
-
-    return detections
+    return [
+        (lat, lon, start_time + timedelta(minutes=i * step_minutes))
+        for i, (lat, lon) in enumerate(points)
+    ]
 
 
-def visualize_fire_grid(
-    detections: list[tuple[int, int, datetime]],
-    row_size: int = 10,
-    gif_path: str = None,
-):
+def visualize_fire_grid(buffer: EventBuffer, gif_path: str = None):
     """
-    Visualize the fire detections on a grid for each timestamp.
-    If gif_path is not specified, prints the grid to the console.
-    Otherwise, stores the visualization as a GIF.
+    Visualize the fire events stored in the EventBuffer tensor.
 
-    :param detections: List of tuples containing (row, col, timestamp) for each detection.
-    :param row_size: Size of rows (also for columns). The total grid size will be row_size x row_size.
-    :param gif_path: Path to save the output GIF. If None, prints the grid to the console.
+    :param buffer: An instance of the EventBuffer.
+    :param gif_path: Optional path to save the animation as a GIF.
     """
-    # Try using emojis if supported
-    try:
-        tree = "🌲"
-        fire = "🔥"
-        print(tree, fire, end="\r")
-    except Exception:
-        tree = "."
-        fire = "F"
-
-    # Prepare frames for each timestamp
     frames = []
-    for i in range(len(detections)):
-        grid = [[tree for _ in range(row_size)] for _ in range(row_size)]
-        for row, col, _ in detections[: i + 1]:
-            if 0 <= row < row_size and 0 <= col < row_size:
-                grid[row][col] = fire
-        frames.append(grid)
+    for frame_idx in range(buffer.max_capacity):
+        fire_layer = buffer.tensor[frame_idx, 1]
+        if np.sum(fire_layer) == 0:
+            continue  # Skip empty frames
+        frames.append(fire_layer.copy())
+
+    if not frames:
+        print("No fire events to visualize.")
+        return
+
+    fig, ax = plt.subplots()
+
+    def update(frame):
+        ax.clear()
+        ax.set_title("Fire Spread Over Time")
+        ax.imshow(frame, cmap="hot", vmin=0, vmax=1)
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    ani = animation.FuncAnimation(fig, update, frames=frames, repeat=False)
 
     if gif_path:
-        # Ensure gif_path exists
-        gif_dir = os.path.dirname(gif_path)
-        if gif_dir and not os.path.exists(gif_dir):
-            os.makedirs(gif_dir, exist_ok=True)
-
-        # Create the GIF
-        fig, ax = plt.subplots()
-
-        def update(frame):
-            ax.clear()
-            ax.set_xticks([])
-            ax.set_yticks([])
-            ax.imshow(
-                np.array([[1 if cell == fire else 0 for cell in row] for row in frame]),
-                cmap="hot",
-                vmin=0,
-                vmax=1,
-            )
-
-        ani = animation.FuncAnimation(fig, update, frames=frames, repeat=False)
+        os.makedirs(os.path.dirname(gif_path), exist_ok=True)
         ani.save(gif_path, writer="pillow")
-        plt.close(fig)
+        print(f"Saved fire animation to {gif_path}")
     else:
-        # Print each frame to the console
-        for idx, grid in enumerate(frames):
-            print(f"Frame {idx + 1}:")
-            for r in grid:
-                print(" ".join(r))
-            print()
+        plt.show()
+
+    plt.close(fig)
