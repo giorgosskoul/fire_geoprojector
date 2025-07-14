@@ -82,7 +82,7 @@ class EventBuffer:
         row, col = self.coord_to_grid(lat, lon)
 
         if 0 <= row < self.row_size and 0 <= col < self.row_size:
-            # Store fire flag
+            # Store the fire flag
             self.tensor[frame_idx, 1, row, col] = 1
 
             # Store timestamp (UNIX time) in channel 0 for the entire frame

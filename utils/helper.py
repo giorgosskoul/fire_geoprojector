@@ -51,6 +51,8 @@ def assign_timestamps_to_points(
 def visualize_fire_grid(buffer: EventBuffer, gif_path: str = None):
     """
     Visualize the fire events stored in the EventBuffer tensor.
+    A possible current limitation is that previous cells on fire are not shown in future
+    detections.
 
     :param buffer: An instance of the EventBuffer.
     :param gif_path: Optional path to save the animation as a GIF.
@@ -58,8 +60,9 @@ def visualize_fire_grid(buffer: EventBuffer, gif_path: str = None):
     frames = []
     for frame_idx in range(buffer.max_capacity):
         fire_layer = buffer.tensor[frame_idx, 1]
+        # Skip empty frames
         if np.sum(fire_layer) == 0:
-            continue  # Skip empty frames
+            continue  
         frames.append(fire_layer.copy())
 
     if not frames:
