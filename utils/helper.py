@@ -1,11 +1,12 @@
 import json
 import os
-import random
-from datetime import datetime, timedelta
 
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+import matplotlib.animation as animation
+import matplotlib.pyplot as plt
 
 from utils.buffer import EventBuffer
 
@@ -29,25 +30,6 @@ def load_points_from_json(file_path: str):
         return ignition_points
 
 
-def assign_timestamps_to_points(
-    points: list[list[float]],
-    start_time: datetime,
-    step_minutes: int = 1,
-) -> list[tuple[float, float, datetime]]:
-    """
-    Assign timestamps to a list of (lat, lon) points in sequential order.
-
-    :param points: List of [lat, lon] points.
-    :param start_time: Datetime to begin the timeline.
-    :param step_minutes: Minutes between each point.
-    :return: List of (lat, lon, timestamp) tuples.
-    """
-    return [
-        (lat, lon, start_time + timedelta(minutes=i * step_minutes))
-        for i, (lat, lon) in enumerate(points)
-    ]
-
-
 def visualize_fire_grid(buffer: EventBuffer, gif_path: str = None):
     """
     Visualize the fire events stored in the EventBuffer tensor.
@@ -62,7 +44,7 @@ def visualize_fire_grid(buffer: EventBuffer, gif_path: str = None):
         fire_layer = buffer.tensor[frame_idx, 1]
         # Skip empty frames
         if np.sum(fire_layer) == 0:
-            continue  
+            continue
         frames.append(fire_layer.copy())
 
     if not frames:
@@ -88,3 +70,42 @@ def visualize_fire_grid(buffer: EventBuffer, gif_path: str = None):
         plt.show()
 
     plt.close(fig)
+
+
+class LiveFireDisplay:
+    def __init__(self, row_size, record=False):
+        self.record = record
+        self.frames = []
+        self.row_size = row_size
+
+        plt.ion()
+        self.fig, self.ax = plt.subplots()
+        self.img = self.ax.imshow(
+            np.zeros((row_size, row_size)), cmap="hot", vmin=0, vmax=1
+        )
+        self.ax.set_title("Live Fire Grid")
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
+
+    def update(self, fire_frame, title=None):
+        self.img.set_data(fire_frame)
+        if title:
+            self.ax.set_title(title)
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+        if self.record:
+            self.frames.append(fire_frame.copy())
+
+    def save_gif(self, path):
+        if not self.record or not self.frames:
+            print("No recorded frames to save.")
+            return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        ani = animation.ArtistAnimation(
+            self.fig,
+            [[self.ax.imshow(f, cmap="hot", animated=True)] for f in self.frames],
+            interval=500,
+            blit=True,
+        )
+        ani.save(path, writer="pillow")
+        print(f"Saved animation to {path}")

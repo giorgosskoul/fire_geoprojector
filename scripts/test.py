@@ -1,58 +1,50 @@
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 
-import numpy as np
+import time
+import matplotlib.pyplot as plt
 
 from utils.buffer import EventBuffer
-from utils.helper import (
-    assign_timestamps_to_points,
-    load_points_from_json,
-    visualize_fire_grid,
-)
+from utils.helper import load_points_from_json, LiveFireDisplay
 
 
 def main(data_path: str, gif_path: str):
-    """
-    Main function to load fire detections, insert into buffer, and visualize the results.
-
-    :param data_path: Path to the ignition points JSON file.
-    :param gif_path: Path to save the output GIF. If None, the grid will be printed to the console.
-    """
-    # Load the test ignition points from JSON file
     ignition_points = load_points_from_json(data_path)
     if not ignition_points:
         print("No ignition points to process.")
         return
 
-    print(f"Ignition Points: {ignition_points}")
-
-    # Define timeline start
     start_time = datetime.now()
-    timestamped_events = assign_timestamps_to_points(
-        ignition_points, start_time, step_minutes=1
-    )
-
-    # Initialize EventBuffer
-    ignition_point = timestamped_events[0]
+    first_lat, first_lon = ignition_points[0][0]
+    ignition_point = (first_lat, first_lon, start_time)
     buffer = EventBuffer(ignition_point=ignition_point)
 
-    # Add all events to buffer
-    print("Adding events to buffer...")
-    for lat, lon, ts in timestamped_events:
-        buffer.add_event(lat, lon, ts)
+    # Create live display with optional recording
+    live_display = LiveFireDisplay(buffer.row_size, record=(gif_path is not None))
 
-    # Convert buffer tensor to (row, col, timestamp) detections for visualization
-    detections = []
-    for frame_idx in range(buffer.max_capacity):
-        frame = buffer.tensor[frame_idx, 1]
-        ts_frame = buffer.tensor[frame_idx, 0]
-        rows, cols = np.where(frame > 0)
-        for r, c in zip(rows, cols):
-            ts_unix = ts_frame[r, c]
-            timestamp = datetime.fromtimestamp(float(ts_unix))
-            detections.append((r, c, timestamp))
+    print("Adding events and updating live view...")
+    for t, fire_points in enumerate(ignition_points):
+        ts = start_time + timedelta(minutes=t)
+        for point in fire_points:
+            if len(point) != 2:
+                continue
+            lat, lon = point
+            buffer.add_event(lat, lon, ts)
 
-    visualize_fire_grid(buffer, gif_path=gif_path)
+        # Get the updated fire frame
+        frame_idx = buffer.get_frame_index(ts)
+        fire_frame = buffer.tensor[frame_idx, 1]
+        live_display.update(fire_frame, title=f"Frame {frame_idx}")
+
+        # Optional: pause to simulate real-time
+        time.sleep(0.3)
+
+    plt.ioff()
+    plt.show()
+
+    # 👇 save gif if needed
+    if gif_path:
+        live_display.save_gif(gif_path)
 
 
 if __name__ == "__main__":

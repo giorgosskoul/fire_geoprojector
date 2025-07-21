@@ -31,6 +31,12 @@ class EventBuffer:
         # (!): for the tensor I will use tensor[:,0,row,col] as the timestamp
         # # and tensor[:,1,row,col] as the true fire. Rest can be added later.
 
+        # We can approximate 1 degree of latitude to 111km, for small distances.
+        # The real conversion requires the Haversine Formula.
+        # We can then calculate 1 degree of longitutde as 111km * cos(lat).
+        self.km_per_deg_lat = 111.320
+        self.km_per_deg_lon = 111.320 * np.cos(np.radians(self.lat0))
+
     def coord_to_grid(self, lat: float, lon: float) -> tuple[int, int]:
         """
         Converts real-world coordinates to grid coordinates.
@@ -39,14 +45,9 @@ class EventBuffer:
         :param lon: Longitude of the point.
         :return: Tuple of (row, col) corresponding to the grid position.
         """
-        # We can approximate 1 degree of latitude to 111km, for small distances.
-        # The real conversion requires the Haversine Formula.
-        # We can then calculate 1 degree of longitutde as 111km * cos(lat).
-        km_per_deg_lat = 111.320
-        km_per_deg_lon = 111.320 * np.cos(np.radians(self.lat0))
 
-        dlat_km = (lat - self.lat0) * km_per_deg_lat
-        dlon_km = (lon - self.lon0) * km_per_deg_lon
+        dlat_km = (lat - self.lat0) * self.km_per_deg_lat
+        dlon_km = (lon - self.lon0) * self.km_per_deg_lon
 
         # Calculate offsets for grid rows and columns
         row_offset = int(round(dlat_km / self.cell_size_km))
@@ -88,3 +89,84 @@ class EventBuffer:
             # Store timestamp (UNIX time) in channel 0 for the entire frame
             ts_unix = timestamp.timestamp()
             self.tensor[frame_idx, 0, row, col] = ts_unix
+        else:
+            # Overwrite with expanded tensor
+            self.handle_ofg_events(lat, lon, timestamp)
+
+    def handle_ofg_events(self, lat: float, lon: float, timestamp: datetime):
+        """
+        Handles Out-of-Grid (OFG) events by shifting the grid origin.
+        The new origin is calculated as the average of the current origin and the OFG event coordinates.
+
+        :param lat: Latitude of the OFG event.
+        :param lon: Longitude of the OFG event.
+        """
+
+        # Calculate the new grid origin based on the OFG event
+        new_lat0 = (self.lat0 + lat) / 2
+        new_lon0 = (self.lon0 + lon) / 2
+
+        # Display a warning for OFG events
+        print(f"Out-of-Grid event detected at ({lat}, {lon}). Shifting grid origin.")
+        print(f"New grid origin set to ({new_lat0}, {new_lon0}).")
+        print("-------------------------------")
+
+        # Shift the grid to the new origin
+        self.shift_grid(new_lat0, new_lon0)
+
+        # Add the event at the new origin
+        self.add_event(lat, lon, timestamp)
+
+    def shift_grid(self, new_lat0: float, new_lon0: float):
+        """
+        Shift the grid origin to a new latitude and longitude.
+
+        : param new_lat0: New latitude for the grid origin.
+        : param new_lon0: New longitude for the grid origin.
+        """
+        km_per_deg_lat = 111.320
+        km_per_deg_lon_old = self.km_per_deg_lon
+        # Calculate new km per degree for the new origin
+        self.km_per_deg_lon = 111.320 * np.cos(np.radians(new_lat0))
+
+        center = self.row_size // 2
+
+        # Old grid (row, col) → lat/lon
+        rows, cols = np.meshgrid(
+            np.arange(self.row_size), np.arange(self.row_size), indexing="ij"
+        )
+        dlat_km = (center - rows) * self.cell_size_km
+        dlon_km = (cols - center) * self.cell_size_km
+
+        lat = self.lat0 + dlat_km / km_per_deg_lat
+        lon = self.lon0 + dlon_km / km_per_deg_lon_old
+
+        # lat/lon → new (row, col)
+        dlat_km_new = (lat - new_lat0) * km_per_deg_lat
+        dlon_km_new = (lon - new_lon0) * self.km_per_deg_lon
+
+        new_rows = center - np.round(dlat_km_new / self.cell_size_km).astype(int)
+        new_cols = center + np.round(dlon_km_new / self.cell_size_km).astype(int)
+
+        # Mask for valid new indices
+        valid_mask = (
+            (new_rows >= 0)
+            & (new_rows < self.row_size)
+            & (new_cols >= 0)
+            & (new_cols < self.row_size)
+        )
+
+        # Index valid old and new positions
+        old_rows = rows[valid_mask]
+        old_cols = cols[valid_mask]
+        tgt_rows = new_rows[valid_mask]
+        tgt_cols = new_cols[valid_mask]
+
+        # Broadcast across time and channels
+        new_tensor = np.zeros_like(self.tensor)
+        new_tensor[:, :, tgt_rows, tgt_cols] = self.tensor[:, :, old_rows, old_cols]
+
+        # Final update
+        self.lat0 = new_lat0
+        self.lon0 = new_lon0
+        self.tensor = new_tensor
