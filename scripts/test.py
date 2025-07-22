@@ -1,17 +1,28 @@
 import argparse
+import logging
+import time
 from datetime import datetime, timedelta
 
-import time
 import matplotlib.pyplot as plt
+from rich.logging import RichHandler
 
 from utils.buffer import EventBuffer
-from utils.helper import load_points_from_json, LiveFireDisplay
+from utils.helper import LiveFireDisplay, load_points_from_json
+
+logging.basicConfig(
+    level="INFO",
+    format="%(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[RichHandler(rich_tracebacks=True)],
+)
+
+LOGGER = logging.getLogger(__name__)
 
 
 def main(data_path: str, gif_path: str):
     ignition_points = load_points_from_json(data_path)
     if not ignition_points:
-        print("No ignition points to process.")
+        LOGGER.info("No ignition points to process.")
         return
 
     start_time = datetime.now()
@@ -22,7 +33,7 @@ def main(data_path: str, gif_path: str):
     # Create live display with optional recording
     live_display = LiveFireDisplay(buffer.row_size, record=(gif_path is not None))
 
-    print("Adding events and updating live view...")
+    LOGGER.info("Adding events and updating live view...")
     for t, fire_points in enumerate(ignition_points):
         ts = start_time + timedelta(minutes=t)
         for point in fire_points:

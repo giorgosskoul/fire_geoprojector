@@ -1,6 +1,9 @@
-from datetime import datetime, timedelta
+import logging
+from datetime import datetime
 
 import numpy as np
+
+LOGGER = logging.getLogger(__name__)
 
 
 class EventBuffer:
@@ -13,7 +16,7 @@ class EventBuffer:
         max_capacity: int = 240,
     ):
         """
-        A buffer class which stores fire detection events in a sequential grid.
+        A buffer class which stores fire detection events in a tensor containing the sequential grid.
 
         :param ignition_point: The fire-starting point corresponding to a tuple of (lat, lon, timestamp)
         :param row_size: Size of rows (also for columns). The total grid size will be row_size x row_size.
@@ -36,6 +39,11 @@ class EventBuffer:
         # We can then calculate 1 degree of longitutde as 111km * cos(lat).
         self.km_per_deg_lat = 111.320
         self.km_per_deg_lon = 111.320 * np.cos(np.radians(self.lat0))
+
+        # Define the grid origin
+        LOGGER.info(
+            f"Initializing EventBuffer with origin at ({self.lat0}, {self.lon0})"
+        )
 
     def coord_to_grid(self, lat: float, lon: float) -> tuple[int, int]:
         """
@@ -90,12 +98,12 @@ class EventBuffer:
             ts_unix = timestamp.timestamp()
             self.tensor[frame_idx, 0, row, col] = ts_unix
         else:
-            # Overwrite with expanded tensor
+            # Overwrite with expanded grid
             self.handle_ofg_events(lat, lon, timestamp)
 
     def handle_ofg_events(self, lat: float, lon: float, timestamp: datetime):
         """
-        Handles Out-of-Grid (OFG) events by shifting the grid origin.
+        Handles Out-of-Fire-Grid (OFG) events by shifting the grid origin.
         The new origin is calculated as the average of the current origin and the OFG event coordinates.
 
         :param lat: Latitude of the OFG event.
@@ -107,9 +115,9 @@ class EventBuffer:
         new_lon0 = (self.lon0 + lon) / 2
 
         # Display a warning for OFG events
-        print(f"Out-of-Grid event detected at ({lat}, {lon}). Shifting grid origin.")
-        print(f"New grid origin set to ({new_lat0}, {new_lon0}).")
-        print("-------------------------------")
+        LOGGER.info(
+            f"Shifting grid origin to ({new_lat0}, {new_lon0}) due to OFG event at ({lat}, {lon})"
+        )
 
         # Shift the grid to the new origin
         self.shift_grid(new_lat0, new_lon0)
@@ -121,10 +129,9 @@ class EventBuffer:
         """
         Shift the grid origin to a new latitude and longitude.
 
-        : param new_lat0: New latitude for the grid origin.
-        : param new_lon0: New longitude for the grid origin.
+        :param new_lat0: New latitude for the grid origin.
+        :param new_lon0: New longitude for the grid origin.
         """
-        km_per_deg_lat = 111.320
         km_per_deg_lon_old = self.km_per_deg_lon
         # Calculate new km per degree for the new origin
         self.km_per_deg_lon = 111.320 * np.cos(np.radians(new_lat0))
@@ -135,14 +142,15 @@ class EventBuffer:
         rows, cols = np.meshgrid(
             np.arange(self.row_size), np.arange(self.row_size), indexing="ij"
         )
+        # Calculate the distance in km from the center
         dlat_km = (center - rows) * self.cell_size_km
         dlon_km = (cols - center) * self.cell_size_km
 
-        lat = self.lat0 + dlat_km / km_per_deg_lat
+        lat = self.lat0 + dlat_km / self.km_per_deg_lat
         lon = self.lon0 + dlon_km / km_per_deg_lon_old
 
         # lat/lon → new (row, col)
-        dlat_km_new = (lat - new_lat0) * km_per_deg_lat
+        dlat_km_new = (lat - new_lat0) * self.km_per_deg_lat
         dlon_km_new = (lon - new_lon0) * self.km_per_deg_lon
 
         new_rows = center - np.round(dlat_km_new / self.cell_size_km).astype(int)
@@ -170,3 +178,11 @@ class EventBuffer:
         self.lat0 = new_lat0
         self.lon0 = new_lon0
         self.tensor = new_tensor
+
+    def get_tensor(self) -> np.ndarray:
+        """
+        Returns the current tensor.
+
+        :return: A numpy array of shape (max_capacity, 12, row_size, row_size).
+        """
+        return self.tensor

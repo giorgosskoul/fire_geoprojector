@@ -1,14 +1,14 @@
 import json
+import logging
 import os
 
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import numpy as np
-import os
-import matplotlib.animation as animation
-import matplotlib.pyplot as plt
 
 from utils.buffer import EventBuffer
+
+LOGGER = logging.getLogger(__name__)
 
 
 def load_points_from_json(file_path: str):
@@ -23,10 +23,12 @@ def load_points_from_json(file_path: str):
     with open(file_path, "r", encoding="utf-8") as f:
         ignition_points = json.load(f)
     if not ignition_points:
-        print("No ignition points found in the JSON file.")
+        LOGGER.info("No ignition points found in the JSON file.")
         return
     else:
-        print(f"Loaded {len(ignition_points)} ignition points from the JSON file.")
+        LOGGER.info(
+            f"Loaded {len(ignition_points)} ignition points from the JSON file."
+        )
         return ignition_points
 
 
@@ -48,7 +50,7 @@ def visualize_fire_grid(buffer: EventBuffer, gif_path: str = None):
         frames.append(fire_layer.copy())
 
     if not frames:
-        print("No fire events to visualize.")
+        LOGGER.info("No fire events to visualize.")
         return
 
     fig, ax = plt.subplots()
@@ -65,7 +67,7 @@ def visualize_fire_grid(buffer: EventBuffer, gif_path: str = None):
     if gif_path:
         os.makedirs(os.path.dirname(gif_path), exist_ok=True)
         ani.save(gif_path, writer="pillow")
-        print(f"Saved fire animation to {gif_path}")
+        LOGGER.info(f"Saved fire animation to {gif_path}")
     else:
         plt.show()
 
@@ -98,7 +100,7 @@ class LiveFireDisplay:
 
     def save_gif(self, path):
         if not self.record or not self.frames:
-            print("No recorded frames to save.")
+            LOGGER.info("No recorded frames to save.")
             return
         os.makedirs(os.path.dirname(path), exist_ok=True)
         ani = animation.ArtistAnimation(
@@ -108,4 +110,4 @@ class LiveFireDisplay:
             blit=True,
         )
         ani.save(path, writer="pillow")
-        print(f"Saved animation to {path}")
+        LOGGER.info(f"Saved animation to {path}")
